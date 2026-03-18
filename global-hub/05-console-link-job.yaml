@@ -1,0 +1,92 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: global-hub-console-linker
+  namespace: multicluster-global-hub
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: global-hub-console-linker-role
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+rules:
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["console.openshift.io"]
+    resources: ["consolelinks"]
+    verbs: ["get", "list", "create", "patch", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: global-hub-console-linker-binding
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: global-hub-console-linker-role
+subjects:
+  - kind: ServiceAccount
+    name: global-hub-console-linker
+    namespace: multicluster-global-hub
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-global-hub-console-link
+  namespace: multicluster-global-hub
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded,BeforeHookCreation
+spec:
+  template:
+    spec:
+      serviceAccountName: global-hub-console-linker
+      restartPolicy: OnFailure
+      containers:
+        - name: linker
+          image: quay.io/openshift/origin-cli:latest
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "Waiting for Global Hub to generate the Grafana Route..."
+              
+              # Loop until the route physically exists
+              until oc get route multicluster-global-hub-grafana -n multicluster-global-hub &>/dev/null; do
+                echo "Still waiting for Grafana Route..."
+                sleep 10
+              done
+              
+              echo "Extracting Grafana Host URL..."
+              GRAFANA_HOST=$(oc get route multicluster-global-hub-grafana -n multicluster-global-hub -o jsonpath='{.spec.host}')
+              
+              echo "Creating OpenShift ConsoleLink..."
+              cat <<EOF | oc apply -f -
+              apiVersion: console.openshift.io/v1
+              kind: ConsoleLink
+              metadata:
+                name: global-hub-observability-grafana
+              spec:
+                href: "https://$GRAFANA_HOST"
+                location: ApplicationMenu
+                text: Global Hub Observability (Grafana)
+                applicationMenu:
+                  section: Observability
+                  imageURL: 'https://upload.wikimedia.org/wikipedia/commons/3/3a/OpenShift-LogoType.svg'
+              EOF
+              
+              echo "ConsoleLink successfully created!"
