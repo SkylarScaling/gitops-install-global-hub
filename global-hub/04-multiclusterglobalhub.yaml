@@ -7,7 +7,6 @@ metadata:
     # Sync-wave 1 ensures ArgoCD waits until the operator is installed and the CRD exists
     argocd.argoproj.io/sync-wave: "1"
 spec:
-  dataFormat: message
   # Pin the Global Hub database and Kafka instances to infra nodes
   nodeSelector:
     node-role.kubernetes.io/infra: ""
