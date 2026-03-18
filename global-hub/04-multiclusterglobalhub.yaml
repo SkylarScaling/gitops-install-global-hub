@@ -1,0 +1,17 @@
+apiVersion: operator.open-cluster-management.io/v1alpha4
+kind: MulticlusterGlobalHub
+metadata:
+  name: multiclusterglobalhub
+  namespace: multicluster-global-hub
+  annotations:
+    # Sync-wave 1 ensures ArgoCD waits until the operator is installed and the CRD exists
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  dataFormat: message
+  # Pin the Global Hub database and Kafka instances to infra nodes
+  nodeSelector:
+    node-role.kubernetes.io/infra: ""
+  tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/infra
+      operator: Exists
